@@ -394,8 +394,8 @@ async def ob_planner(state: OnboardingState):
 async def ob_jira_node(state: OnboardingState):
     print(f"[PIPELINE] ::: JIRA Provisioning Node (Retry: {state.get('jira_retries', 0)})")
     
-    # ❌ Simulated deterministic failure on first attempt
-    if state.get("jira_retries", 0) == 0:
+    # ❌ Simulated deterministic failure on all attempts for the demo
+    if state.get("jira_retries", 0) < 5:
         error_msg = "JIRA API Gateway Error: Authentication Timeout (504)"
         state["logs"].append({"agent": "AccountCreatorAgent", "action": "JIRA setup", "result": error_msg})
         await log_step(state['workflow_id'], "AccountCreatorAgent", "Attempting JIRA provisioning", "❌ FAILED: " + error_msg)
@@ -403,7 +403,7 @@ async def ob_jira_node(state: OnboardingState):
         state["errors"] = [error_msg]
         return state
 
-    # ✅ Success on second attempt
+    # ✅ Success on second attempt (unreachable now, for demo)
     state["tasks_status"][2]["status"] = "success"
     state["errors"] = []
     await log_step(state['workflow_id'], "AccountCreatorAgent", "JIRA setup retry", "✅ SUCCESS: Account created for " + state['employee_name'])
