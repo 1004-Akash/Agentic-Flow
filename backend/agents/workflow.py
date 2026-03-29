@@ -51,45 +51,75 @@ async def planner_agent(state: AgentState):
     print(f"\n[PIPELINE] ::: PlannerAgent Starting (Workflow: {state['workflow_id']})")
     
     cursor = tasks_collection.find({"status": {"$ne": "completed"}}).sort("created_at", -1)
-    past_tasks = await cursor.to_list(length=20)
-    past_tasks_str = json.dumps([{"task": t["task"], "person": t["person"], "progress": t.get("progress", 0)} for t in past_tasks])
+    past_tasks = await cursor.to_list(length=50)
+    past_tasks_str = json.dumps([{"_id": str(t["_id"]), "task": t["task"], "person": t["person"], "progress": t.get("progress", 0)} for t in past_tasks])
 
     prompt = f"""
-    You are a PlannerAgent in an enterprise workflow system. Extract tasks from the meeting transcript.
-    Take previous tasks into consideration to avoid duplicates.
+    You are a PlannerAgent in an enterprise workflow system. You have TWO distinct objectives based on the meeting transcript:
+    1. Extract NEW tasks. Do NOT duplicate previous active tasks.
+    2. Extract PROGRESS UPDATES for existing tasks. (e.g., if someone says they completed half their work, set progress to 50).
+    
     Previous Active Tasks: {past_tasks_str}
     
     Meeting Text: {state['meeting_text']}
     
-    IMPORTANT RULES:
-    1. If a task has a CLEAR owner mentioned in the transcript, assign them.
-    2. If a task has NO CLEAR owner (ambiguous), set person to "UNASSIGNED" and add "needs_clarification": true.
-    3. Do NOT guess owners. Flag ambiguity instead.
-    4. Do NOT duplicate tasks that already exist in the system.
+    IMPORTANT RULES FOR NEW TASKS:
+    1. If a task has a CLEAR owner, assign them.
+    2. If NO CLEAR owner, set person to "UNASSIGNED" and add "needs_clarification": true. Do not guess.
     
-    Return ONLY a valid JSON list:
-    [
-      {{
-        "task": "Task Description",
-        "person": "Name or UNASSIGNED",
-        "deadline": "YYYY-MM-DD",
-        "needs_clarification": false
-      }}
-    ]
+    Return ONLY a valid JSON object matching this schema exactly:
+    {{
+      "new_tasks": [
+        {{
+          "task": "Task Description",
+          "person": "Name or UNASSIGNED",
+          "deadline": "YYYY-MM-DD",
+          "needs_clarification": false
+        }}
+      ],
+      "progress_updates": [
+        {{
+          "_id": "matching existing task _id",
+          "progress": 50,
+          "status": "in-progress"
+        }}
+      ]
+    }}
     """
     response = await llm.ainvoke([HumanMessage(content=prompt)])
     try:
         content = response.content.replace("```json", "").replace("```", "").strip()
-        tasks = json.loads(content)
+        parsed = json.loads(content)
+        
+        # 1. Handle New Tasks
+        tasks = parsed.get("new_tasks", [])
         ambiguous = [t for t in tasks if t.get("needs_clarification")]
         state['tasks'] = tasks
-        await log_step(state['workflow_id'], "PlannerAgent", "Extract tasks from transcript", {
+        
+        await log_step(state['workflow_id'], "PlannerAgent", "Extract new tasks", {
             "total_extracted": len(tasks),
             "ambiguous_flagged": len(ambiguous),
             "tasks": tasks
         })
         if ambiguous:
-            await log_step(state['workflow_id'], "PlannerAgent", "AMBIGUITY DETECTED — flagged tasks with no clear owner", ambiguous)
+            await log_step(state['workflow_id'], "PlannerAgent", "AMBIGUITY DETECTED", ambiguous)
+            
+        # 2. Handle Progress Updates
+        updates = parsed.get("progress_updates", [])
+        updated_log = []
+        from bson import ObjectId
+        for upd in updates:
+            try:
+                task_id = upd.get("_id")
+                new_progress = upd.get("progress", 0)
+                new_status = upd.get("status", "in-progress") if new_progress < 100 else "completed"
+                await tasks_collection.update_one({"_id": ObjectId(task_id)}, {"$set": {"progress": new_progress, "status": new_status}})
+                updated_log.append({"task_id": task_id, "progress": new_progress})
+            except: pass
+            
+        if updated_log:
+            await log_step(state['workflow_id'], "PlannerAgent", "Updated existing task progress", {"updates": updated_log})
+
     except Exception as e:
         print(f"[ERROR] PlannerAgent failed: {str(e)}")
         state['errors'].append(f"Planner error: {str(e)}")
@@ -115,85 +145,6 @@ async def assignment_agent(state: AgentState):
     await log_step(state['workflow_id'], "AssignmentAgent", "Assign and store tasks", {"count": len(tasks_with_ids)})
     return state
 
-# 3. TrackerAgent — Intelligent Progress Updater
-async def tracker_agent(state: AgentState):
-    print(f"[PIPELINE] ::: TrackerAgent analyzing progress updates...")
-    
-    # Fetch ALL existing tasks from DB (not just this workflow)
-    cursor = tasks_collection.find().sort("created_at", -1)
-    all_existing_tasks = await cursor.to_list(length=50)
-    existing_summary = []
-    for t in all_existing_tasks:
-        existing_summary.append({
-            "_id": str(t["_id"]),
-            "task": t.get("task", ""),
-            "person": t.get("person", ""),
-            "progress": t.get("progress", 0),
-            "status": t.get("status", "pending")
-        })
-
-    prompt = f"""
-    You are a TrackerAgent. Your job is to detect progress updates from a meeting transcript.
-    
-    Here are ALL existing tasks in the system:
-    {json.dumps(existing_summary, default=str)}
-    
-    Here is the latest meeting transcript:
-    {state['meeting_text']}
-    
-    Analyze the transcript. If someone mentions progress for an existing task or person (e.g. "Austin completed 12%" or "frontend is 50% done"), return updates.
-    
-    Return ONLY a valid JSON list of updates:
-    [
-      {{
-        "_id": "existing task _id to update",
-        "progress": 12,
-        "status": "in-progress"
-      }}
-    ]
-    
-    Rules:
-    - Match by person name or task description.
-    - If progress is 100, set status to "completed".  
-    - If progress > 0 and < 100, set status to "in-progress".
-    - If no progress updates are mentioned for a task, do NOT include it.
-    - If transcript mentions new tasks only (no progress updates), return [].
-    """
-    
-    response = await llm.ainvoke([HumanMessage(content=prompt)])
-    updates_applied = []
-    try:
-        content = response.content.replace("```json", "").replace("```", "").strip()
-        updates = json.loads(content)
-        
-        from bson import ObjectId
-        for upd in updates:
-            task_id = upd.get("_id")
-            new_progress = upd.get("progress", 0)
-            new_status = upd.get("status", "in-progress")
-            if new_progress >= 100:
-                new_status = "completed"
-            
-            try:
-                await tasks_collection.update_one(
-                    {"_id": ObjectId(task_id)},
-                    {"$set": {"progress": new_progress, "status": new_status}}
-                )
-                updates_applied.append({"_id": task_id, "progress": new_progress, "status": new_status})
-                print(f"    [TRACKER] Updated task {task_id} -> {new_progress}% ({new_status})")
-            except Exception as e:
-                print(f"    [TRACKER] Failed to update {task_id}: {str(e)}")
-    except Exception as e:
-        print(f"[ERROR] TrackerAgent LLM parse failed: {str(e)}")
-    
-    # Also set new tasks from this workflow to in-progress if no update was found
-    for task in state['tasks']:
-        if task.get("_id") and not any(u["_id"] == task["_id"] for u in updates_applied):
-            task['progress'] = 0
-            task['status'] = "pending"
-    
-    await log_step(state['workflow_id'], "TrackerAgent", "Intelligent progress sync completed", {"updates": updates_applied, "count": len(updates_applied)})
-    return state
 
 # 4. AlertAgent
 async def alert_agent(state: AgentState):
@@ -256,7 +207,7 @@ async def fix_agent(state: AgentState):
         esc_html += "</ul>"
         async with aiohttp.ClientSession() as session:
             try:
-                await session.post("https://api.resend.com/emails", headers={"Authorization": "Bearer re_RKva9i4C_PwGrMyhBE8bvPyPKWkV38NJ6", "Content-Type": "application/json"}, json={"from": "onboarding@resend.dev", "to": [state.get('email', 'test111723201002@gmail.com')], "subject": "AgenticFlow: Escalation Alert", "html": esc_html})
+                await session.post("https://api.resend.com/emails", headers={"Authorization": "Bearer re_VzHmzh5R_yehgFQzdqdGhw3zp4ZVn6e16", "Content-Type": "application/json"}, json={"from": "onboarding@resend.dev", "to": [state.get('email', 'test111723201002@gmail.com')], "subject": "AgenticFlow: Escalation Alert", "html": esc_html})
             except: pass
     
     result = {"fixes": fixes_applied, "escalations": escalations, "total_fixes": len(fixes_applied), "total_escalations": len(escalations)}
@@ -344,7 +295,7 @@ async def report_agent(state: AgentState):
         
         async with aiohttp.ClientSession() as session:
             try:
-                resp = await session.post("https://api.resend.com/emails", headers={"Authorization": "Bearer re_RKva9i4C_PwGrMyhBE8bvPyPKWkV38NJ6", "Content-Type": "application/json"}, json={"from": "onboarding@resend.dev", "to": [email_target], "subject": "AgenticFlow: Pipeline Report", "html": email_html})
+                resp = await session.post("https://api.resend.com/emails", headers={"Authorization": "Bearer re_VzHmzh5R_yehgFQzdqdGhw3zp4ZVn6e16", "Content-Type": "application/json"}, json={"from": "onboarding@resend.dev", "to": [email_target], "subject": "AgenticFlow: Pipeline Report", "html": email_html})
                 print(f"[RESEND API] Response: {resp.status} - {await resp.text()}")
             except Exception as e:
                 print(f"[RESEND API] Exception: {str(e)}")
@@ -371,7 +322,6 @@ def should_fix(state: AgentState):
 workflow = StateGraph(AgentState)
 workflow.add_node("planner", planner_agent)
 workflow.add_node("assignment", assignment_agent)
-workflow.add_node("tracker", tracker_agent)
 workflow.add_node("alert", alert_agent)
 workflow.add_node("fix", fix_agent)
 workflow.add_node("logger", logger_agent)
@@ -379,8 +329,7 @@ workflow.add_node("report", report_agent)
 
 workflow.set_entry_point("planner")
 workflow.add_edge("planner", "assignment")
-workflow.add_edge("assignment", "tracker")
-workflow.add_edge("tracker", "alert")
+workflow.add_edge("assignment", "alert")
 workflow.add_conditional_edges("alert", should_fix, {"fix": "fix", "logger": "logger"})
 workflow.add_edge("fix", "logger")
 workflow.add_edge("logger", "report")
@@ -393,93 +342,274 @@ class OnboardingState(TypedDict):
     workflow_id: str
     input_text: str
     employee_name: str
+    role: str
+    department: str
+    buddy_link: str
     systems_to_create: List[str]
     tasks_status: List[Dict[str, str]]
     jira_retries: int
     escalated: bool
     buddy: str
-    orientation_scheduled: bool
+    orientation_scheduled: str
     welcome_pack_sent: bool
     logs: List[Dict[str, Any]]
+    errors: List[str]
+    next_action: str
 
 async def ob_planner(state: OnboardingState):
-    prompt = f"Extract employee name from text: {state.get('input_text', '')}. Return ONLY the name."
+    prompt = f"""
+    Extract employee details from text: {state.get('input_text', '')}.
+    Return ONLY valid JSON:
+    {{
+      "name": "...",
+      "role": "...",
+      "department": "..."
+    }}
+    """
     response = await llm.ainvoke([HumanMessage(content=prompt)])
-    state['employee_name'] = response.content.strip()
+    try:
+        data = json.loads(response.content.replace("```json", "").replace("```", "").strip())
+        state['employee_name'] = data.get("name", "New Employee")
+        state['role'] = data.get("role", "Software Engineer")
+        state['department'] = data.get("department", "Engineering")
+    except:
+        state['employee_name'] = response.content.strip()
+        state['role'] = "Software Engineer"
+        state['department'] = "Engineering"
+        
+    state['buddy_link'] = "https://t.me/AgenticFlowBuddyAI_bot"
     state['systems_to_create'] = ["Slack", "Email", "JIRA"]
     state['tasks_status'] = [{"system": sys, "status": "pending"} for sys in state['systems_to_create']]
-    await log_step(state['workflow_id'], "OnboardingPlanner", "Sequenced onboarding tasks", {"new_hire": state['employee_name'], "tasks": state['tasks_status']})
+    state['errors'] = []
+    
+    await log_step(state['workflow_id'], "OnboardingPlanner", "Sequenced onboarding tasks", {
+        "new_hire": state['employee_name'], 
+        "role": state['role'],
+        "department": state['department'],
+        "tasks": state['tasks_status']
+    })
     return state
 
-async def ob_account_creator(state: OnboardingState):
-    tasks_status = state.get('tasks_status', [])
-    for task in tasks_status:
-        sys = task["system"]
-        if task["status"] == "success":
-            continue
-            
-        if sys == "JIRA":
-            if state.get('jira_retries', 0) < 1:
-                state['jira_retries'] = state.get('jira_retries', 0) + 1
-                await log_step(state['workflow_id'], "AccountCreatorAgent", f"JIRA provisioning access error. Connection dropped.", {"system": "JIRA", "status": "failed", "attempt": 1})
-                # Break to allow retry conditional edge to loop back
-                break
-            else:
-                task["status"] = "escalated"
-                task["reason"] = "access error after 2 retries"
-                state['escalated'] = True
-                await log_step(state['workflow_id'], "AccountCreatorAgent", "JIRA access failed on retry. Escalating to IT ticket.", {"system": "JIRA", "status": "escalated"})
-        else:
-            task["status"] = "success"
-            await log_step(state['workflow_id'], "AccountCreatorAgent", f"Provisioned {sys} account successfully.", {"system": sys, "status": "success"})
-            
-    state['tasks_status'] = tasks_status
+# Controlled JIRA Failure Simulation
+async def ob_jira_node(state: OnboardingState):
+    print(f"[PIPELINE] ::: JIRA Provisioning Node (Retry: {state.get('jira_retries', 0)})")
+    
+    # ❌ Simulated deterministic failure on first attempt
+    if state.get("jira_retries", 0) == 0:
+        error_msg = "JIRA API Gateway Error: Authentication Timeout (504)"
+        state["logs"].append({"agent": "AccountCreatorAgent", "action": "JIRA setup", "result": error_msg})
+        await log_step(state['workflow_id'], "AccountCreatorAgent", "Attempting JIRA provisioning", "❌ FAILED: " + error_msg)
+        # We don't raise Exception here to keep the graph flow controlled
+        state["errors"] = [error_msg]
+        return state
+
+    # ✅ Success on second attempt
+    state["tasks_status"][2]["status"] = "success"
+    state["errors"] = []
+    await log_step(state['workflow_id'], "AccountCreatorAgent", "JIRA setup retry", "✅ SUCCESS: Account created for " + state['employee_name'])
     return state
 
-async def ob_escalate_it(state: OnboardingState):
-    if state.get('escalated'):
-        await log_step(state['workflow_id'], "ITEscalationAgent", "Created urgent ServiceNow ticket INC-9921 for JIRA. Notified HR Manager.", {"action": "Escalated to IT", "notified": "HR"})
+async def ob_slack_email_node(state: OnboardingState):
+    state["tasks_status"][0]["status"] = "success"
+    state["tasks_status"][1]["status"] = "success"
+    await log_step(state['workflow_id'], "AccountCreatorAgent", "Slack & Email provisioning", "✅ SUCCESS: Accounts provisioned")
+    return state
+
+# 🚨 AlertAgent (Detect Failure)
+def ob_alert_agent(state: OnboardingState):
+    if state.get("errors"):
+        print("[AGENT] AlertAgent: Critical issue detected in JIRA setup pipeline.")
+        return "fix" # route to FixAgent
+    return "continue" # proceed to culture buddy
+
+# 🔧 FixAgent (Retry + Escalate)
+async def ob_fix_agent(state: OnboardingState):
+    print(f"[AGENT] FixAgent analyzing JIRA failure (Retries so far: {state['jira_retries']})")
+    
+    if state.get("jira_retries", 0) < 1:
+        state["jira_retries"] = state.get("jira_retries", 0) + 1
+        await log_step(state['workflow_id'], "FixAgent", "Autonomous Recovery Triggered", "🔁 Retrying JIRA creation in 5 seconds...")
+        # Clear errors to allow the next attempt
+        state["errors"] = []
+        state["next_action"] = "retry_jira"
+    else:
+        state["escalated"] = True
+        state["next_action"] = "continue"
+        await log_step(state['workflow_id'], "FixAgent", "Max retries reached", "🚨 Escalating to IT Infrastructure Team via ServiceNow.")
+        
+        # Simulated IT Notification
+        print(f"!!! [IT NOTIFICATION] Urgent for {state['employee_name']} - JIRA provisioning permanently failed after {state['jira_retries']} retries.")
+        
+        # Integrate with Resend for escalation email
+        from aiohttp import ClientSession
+        async with ClientSession() as session:
+            try:
+                await session.post("https://api.resend.com/emails", 
+                    headers={"Authorization": "Bearer re_VzHmzh5R_yehgFQzdqdGhw3zp4ZVn6e16", "Content-Type": "application/json"}, 
+                    json={
+                        "from": "onboarding@resend.dev", 
+                        "to": ["it-support@agenticflow.inc"], 
+                        "subject": f"🚨 URGENT: JIRA Provisioning Failure - {state['employee_name']}", 
+                        "html": f"<p>JIRA access failed for new hire {state['employee_name']}. <b>Autonomous recovery failed after 2 attempts.</b> Manual intervention required.</p>"
+                    })
+            except: pass
+            
     return state
 
 async def ob_culture_agent(state: OnboardingState):
     state['buddy'] = "Jane Smith"
-    state['orientation_scheduled'] = True
-    await log_step(state['workflow_id'], "CultureAgent", "Assigned buddy and scheduled orientation", {"buddy": state['buddy'], "orientation": "Scheduled"})
+    state['orientation_scheduled'] = "Monday, April 6th @ 10:00 AM (EST)"
+    await log_step(state['workflow_id'], "CultureAgent", "Assigned buddy and scheduled orientation", {
+        "buddy": state['buddy'],
+        "orientation": state['orientation_scheduled']
+    })
     return state
 
 async def ob_welcome_agent(state: OnboardingState):
+    print(f"[PIPELINE] ::: WelcomeAgent generating professional onboarding email...")
+    
+    # Deriving status for JIRA
+    jira_status_val = state['tasks_status'][2]['status']
+    jira_badge = f'<span style="background: #dcfce7; color: #166534; padding: 4px 12px; border-radius: 9999px; font-size: 12px; font-weight: 600;">SUCCESS</span>'
+    jira_extra = ""
+    
+    if jira_status_val != "success":
+        jira_badge = f'<span style="background: #fee2e2; color: #991b1b; padding: 4px 12px; border-radius: 9999px; font-size: 12px; font-weight: 600;">PENDING</span>'
+        escalation_note = " (Escalated to IT Engineering)" if state.get('escalated') else " (Retrying...)"
+        jira_extra = f"""
+        <div style="font-size: 14px; margin-top: 5px; color: #64748b;">
+            We are currently finalizing your JIRA access. There is a slight delay, but our team is already on it{escalation_note} to ensure you have everything you need shortly.
+        </div>
+        """
+
+    html_email = f"""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+            body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #334155; margin: 0; padding: 0; background-color: #f8fafc; }}
+            .container {{ max-width: 600px; margin: 40px auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); border: 1px solid #e2e8f0; }}
+            .header {{ background: linear-gradient(135deg, #1e293b 0%, #334155 100%); padding: 40px 20px; text-align: center; color: #ffffff; }}
+            .content {{ padding: 40px 30px; }}
+            .section {{ margin-bottom: 30px; padding-bottom: 20px; border-bottom: 1px solid #f1f5f9; }}
+            .card {{ background: #f8fafc; border-radius: 8px; padding: 20px; margin-top: 10px; border: 1px solid #e2e8f0; }}
+            .button {{ display: inline-block; padding: 12px 24px; background-color: #2563eb; color: #ffffff !important; text-decoration: none; border-radius: 6px; font-weight: 600; margin-top: 10px; }}
+            .footer {{ padding: 20px; text-align: center; font-size: 12px; color: #94a3b8; background: #f8fafc; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <div style="font-size: 40px; margin-bottom: 10px;">👋</div>
+                <h1 style="margin: 0;">Welcome to the Team!</h1>
+            </div>
+            <div class="content">
+                <p style="font-size: 18px; font-weight: 600; color: #1e293b;">Hi {state['employee_name']},</p>
+                <p>We are thrilled to have you join us as our new <span style="color: #2563eb; font-weight: 600;">{state['role']}</span> in the <span style="color: #2563eb; font-weight: 600;">{state['department']}</span> department.</p>
+                
+                <p>Your official email: <strong>test111723201002@gmail.com</strong></p>
+
+                <div class="section">
+                    <div style="font-size: 14px; font-weight: 700; text-transform: uppercase; color: #64748b;">📅 Orientation Schedule</div>
+                    <div class="card">
+                        <strong>Scheduled for:</strong> {state['orientation_scheduled']}<br>
+                        <p style="margin: 10px 0 0 0; font-size: 13px; color: #64748b;">Check your calendar for the Zoom invite and agenda.</p>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <div style="font-size: 14px; font-weight: 700; text-transform: uppercase; color: #64748b;">🛠️ Tool Access</div>
+                    <ul style="padding-left: 20px;">
+                        <li><strong>Slack:</strong> Access granted. Invite sent.</li>
+                        <li style="margin-top: 10px;">
+                            <strong>JIRA:</strong> {jira_badge}
+                            {jira_extra}
+                        </li>
+                    </ul>
+                </div>
+
+                <div class="section">
+                    <div style="font-size: 14px; font-weight: 700; text-transform: uppercase; color: #64748b;">🤖 AI Assistant (Telegram Buddy)</div>
+                    <p>Meet your automated buddy for instant help with company policies and setup.</p>
+                    <a href="{state['buddy_link']}" class="button">Connect with Buddy</a>
+                </div>
+
+                <div class="section" style="border-bottom: none;">
+                    <div style="font-size: 14px; font-weight: 700; text-transform: uppercase; color: #64748b;">📦 Welcome Pack</div>
+                    <ul style="padding-left: 20px;">
+                        <li>Company Handbook & Culture Guide</li>
+                        <li>Hardware Setup Instructions</li>
+                        <li>Direct Access Links Dashboard</li>
+                    </ul>
+                </div>
+
+                <p style="margin-top: 20px;">Best regards,<br><strong>AgenticFlow People Ops</strong></p>
+            </div>
+            <div class="footer">© 2026 AgenticFlow System | Automated Onboarding Pipeline</div>
+        </div>
+    </body>
+    </html>
+    """
+
+    import aiohttp
+    async with aiohttp.ClientSession() as session:
+        try:
+            await session.post("https://api.resend.com/emails", 
+                headers={"Authorization": "Bearer re_VzHmzh5R_yehgFQzdqdGhw3zp4ZVn6e16", "Content-Type": "application/json"}, 
+                json={
+                    "from": "onboarding@resend.dev", 
+                    "to": ["test111723201002@gmail.com"], # Fixed as per demo requirements
+                    "subject": f"Welcome to the Team, {state['employee_name']}!", 
+                    "html": html_email
+                })
+        except Exception as e:
+            print(f"[ERROR] Failed to send welcome email: {str(e)}")
+
     state['welcome_pack_sent'] = True
-    await log_step(state['workflow_id'], "CultureAgent", "Sent welcome email with documents and resources", {"welcome_pack_sent": True})
+    await log_step(state['workflow_id'], "CultureAgent", "Sent professional welcome email with documents", {"welcome_pack_sent": True, "recipient": "test111723201002@gmail.com"})
     return state
 
-def ob_check_retry(state: OnboardingState):
-    tasks = state.get('tasks_status', [])
-    jira_task = next((t for t in tasks if t["system"] == "JIRA"), None)
-    
-    # If escalated, go to escalate
-    if state.get('escalated') or (jira_task and jira_task.get("status") == "escalated"):
-        return "escalate"
-        
-    # If JIRA failed but not yet escalated, loop back to creator
-    if jira_task and jira_task.get("status") != "success" and state.get('jira_retries', 0) > 0:
-        return "retry"
-        
-    # Otherwise continue to culture buddy assignment
-    return "culture"
-
+# --- LangGraph Onboarding Definition ---
 ob_workflow = StateGraph(OnboardingState)
+
 ob_workflow.add_node("planner", ob_planner)
-ob_workflow.add_node("creator", ob_account_creator)
-ob_workflow.add_node("escalate", ob_escalate_it)
+ob_workflow.add_node("provision_slack_email", ob_slack_email_node)
+ob_workflow.add_node("jira", ob_jira_node)
+ob_workflow.add_node("fix_agent", ob_fix_agent)
 ob_workflow.add_node("culture", ob_culture_agent)
 ob_workflow.add_node("welcome", ob_welcome_agent)
 
 ob_workflow.set_entry_point("planner")
-ob_workflow.add_edge("planner", "creator")
-ob_workflow.add_conditional_edges("creator", ob_check_retry, {"retry": "creator", "escalate": "escalate", "culture": "culture"})
-ob_workflow.add_edge("escalate", "culture")
+ob_workflow.add_edge("planner", "provision_slack_email")
+ob_workflow.add_edge("provision_slack_email", "jira")
+
+# 🔄 Agentic Conditional Flow
+ob_workflow.add_conditional_edges(
+    "jira",
+    ob_alert_agent,
+    {
+        "fix": "fix_agent",
+        "continue": "culture"
+    }
+)
+
+def ob_fix_router(state: OnboardingState):
+    return state.get("next_action", "continue")
+
+ob_workflow.add_conditional_edges(
+    "fix_agent",
+    ob_fix_router,
+    {
+        "retry_jira": "jira",
+        "continue": "culture"
+    }
+)
+
 ob_workflow.add_edge("culture", "welcome")
 ob_workflow.add_edge("welcome", END)
+
 onboarding_workflow_app = ob_workflow.compile()
 
 # --- SLA BREACH WORKFLOW ---

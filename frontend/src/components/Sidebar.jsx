@@ -32,12 +32,12 @@ const Sidebar = () => {
            </div>
         </div>
         <div className="mt-2 space-y-1">
-           <SidebarItem icon={LayoutDashboard} label="Dashboard" to="/" />
-           <SidebarItem icon={Users} label="Agents" to="/agents" />
-           <SidebarItem icon={Calendar} label="Meetings" to="/meetings" />
-           <SidebarItem icon={CheckSquare} label="Tasks" to="/tasks" />
-           <SidebarItem icon={FileText} label="Reports" to="/reports" />
-           <SidebarItem icon={Settings} label="Settings" to="/settings" />
+           <SidebarItem icon={LayoutDashboard} label="Dashboard" to="/admin" />
+           <SidebarItem icon={Users} label="Agents" to="/admin/agents" />
+           <SidebarItem icon={Calendar} label="Meetings" to="/admin/meetings" />
+           <SidebarItem icon={CheckSquare} label="Tasks" to="/admin/tasks" />
+           <SidebarItem icon={FileText} label="Reports" to="/admin/reports" />
+           <SidebarItem icon={Settings} label="Settings" to="/admin/settings" />
         </div>
       </div>
       <div className="mb-8">

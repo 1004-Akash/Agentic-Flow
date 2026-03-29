@@ -16,6 +16,7 @@ reports_collection = database["reports"]
 users_collection = database["users"]
 transcripts_collection = database["transcripts"]
 meetings_collection = database["meetings"]
+new_joinees_collection = database["new_joinees"]
 
 async def initialize_db():
     try:

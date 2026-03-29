@@ -8,9 +8,10 @@ from datetime import datetime
 import os
 from dotenv import load_dotenv
 
-from db.database import tasks_collection, logs_collection, reports_collection, transcripts_collection, meetings_collection, initialize_db
+from db.database import tasks_collection, logs_collection, reports_collection, transcripts_collection, meetings_collection, initialize_db, new_joinees_collection
 from models.schemas import MeetingInput, Task, TaskBase, LogEntry, Report, MeetingModel, TranscriptModel
 from agents.workflow import workflow_app, onboarding_workflow_app, sla_workflow_app
+from agents.bot_agent import bot
 
 load_dotenv()
 
@@ -28,6 +29,8 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup_db_client():
     await initialize_db()
+    # Start the Telegram Bot in the background
+    asyncio.create_task(bot.run())
 
 # MEETING ENDPOINTS
 @app.post("/start-meeting")
@@ -118,34 +121,254 @@ async def get_transcript(meeting_id: str):
     full_text = " ".join([t["text"] for t in transcripts])
     return {"meeting_id": meeting_id, "text": full_text, "segments": transcripts}
 
-# WORKFLOW ENDPOINTS
 @app.post("/onboarding")
-async def process_onboarding(text: str = Body(..., embed=True)):
+async def trigger_onboarding(payload: dict = Body(...)):
+    # Accept both { data: {...} } and flat { name, role, department } shapes
+    data = payload.get("data", payload)
+    
+    name = data.get("name", "New Associate")
+    role = data.get("role", "Engineer")
+    department = data.get("department", "Engineering")
+    email = data.get("email", "test111723201002@gmail.com")
+    
     workflow_id = str(uuid.uuid4())
-    print(f"\n[SYSTEM] Received Onboarding text for Workflow ID: {workflow_id}")
-    state = {
+    print(f"\n[SYSTEM] Triggering ONBOARDING workflow: {workflow_id} for {name}")
+    
+    # Persistent storage of the new enrollment with structured fields
+    await new_joinees_collection.insert_one({
         "workflow_id": workflow_id,
-        "input_text": text,
-        "jira_retries": 0,
-        "escalated": False,
-        "logs": []
+        "name": name,
+        "role": role,
+        "department": department,
+        "email": email,
+        "timestamp": datetime.now(),
+        "status": "processing"
+    })
+    
+    # Build natural language input for LangGraph agent
+    text = f"{name} is joining as a {role} in the {department} team. Please initiate the standard onboarding protocol."
+    
+    config = {"configurable": {"thread_id": workflow_id}}
+    initial_state = {
+        "text": text,
+        "onboarding_id": workflow_id,
+        "status": "started",
+        "next_action": "culture"
     }
+    
     try:
-        result_state = await onboarding_workflow_app.ainvoke(state)
-        # Format output exactly to specification
-        output = {
-            "new_hire": result_state.get('employee_name', 'Unknown'),
-            "tasks": result_state.get('tasks_status', []),
-            "buddy_assigned": result_state.get('buddy', None),
-            "orientation_scheduled": result_state.get('orientation_scheduled', False),
-            "welcome_pack_sent": result_state.get('welcome_pack_sent', False)
-        }
-        print(f"\n[OUTPUT] {json.dumps(output, indent=2)}")
-        # Merge workflow_id into output so frontend might optionally use it, though returning exactly what was requested.
-        return output
+        asyncio.create_task(onboarding_workflow_app.ainvoke(initial_state, config=config))
+        return {"status": "success", "workflow_id": workflow_id, "message": f"Onboarding initiated for {name}"}
     except Exception as e:
         print(f"[SYSTEM] !!! Onboarding workflow error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/employee-check")
+async def employee_check(payload: dict = Body({})):
+    email        = payload.get("email", "test111723201002@gmail.com")
+    name         = payload.get("name", "New Associate")
+    role         = payload.get("role", "Software Engineer")
+    department   = payload.get("department", "AI")
+    joining_date = payload.get("joining_date", "2026-04-01")
+    manager      = payload.get("manager", "Jane Smith")
+    
+    print(f"\n[SYSTEM] Employee check-in: {name} | {role} | {department} | {email}")
+    
+    # Convert date from yyyy-mm-dd (HTML input) → dd-mm-yyyy for storage
+    def fmt_date(d):
+        try:
+            parts = d.split("-")
+            if len(parts) == 3 and len(parts[0]) == 4:
+                # yyyy-mm-dd → dd-mm-yyyy
+                return f"{parts[2]}-{parts[1]}-{parts[0]}"
+            return d  # already in correct format or empty
+        except:
+            return d
+
+    record_id = str(uuid.uuid4())[:8].upper()
+    now = datetime.now()
+
+    # Store full profile in MongoDB — fields match the form exactly
+    join_doc = {
+        "record_id":         record_id,           # e.g. "A1B2C3D4"
+        "full_name":         name,                # Full Name *
+        "job_role":          role,                # Job Role
+        "department":        department,          # Department
+        "joining_date":      fmt_date(joining_date),  # dd-mm-yyyy
+        "reporting_manager": manager,             # Reporting Manager
+        "email":             email,               # Provisioned Email
+        "portal_source":     "new_joinee_portal", # Origin
+        "onboarded_at":      now.strftime("%d-%m-%Y %H:%M:%S"),
+        "status":            "onboarded",
+        "welcome_email_sent": False,
+        "telegram_buddy":    "https://t.me/AgenticFlowBuddyAI_bot"
+    }
+    result = await new_joinees_collection.insert_one(join_doc)
+    print(f"[MONGODB] Inserted new joinee record_id={record_id} | _id={result.inserted_id}")
+    
+    # Build rich welcome email
+    html_email = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+    <style>
+        body {{ font-family: 'Segoe UI', Arial, sans-serif; background: #f1f5f9; margin: 0; padding: 0; }}
+        .wrapper {{ max-width: 620px; margin: 40px auto; background: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.1); }}
+        .header {{ background: linear-gradient(135deg, #4f46e5 0%, #1d4ed8 100%); padding: 50px 40px; text-align: center; }}
+        .header h1 {{ color: white; margin: 0; font-size: 28px; font-weight: 800; }}
+        .header p {{ color: rgba(255,255,255,0.75); margin: 10px 0 0; font-size: 14px; }}
+        .body {{ padding: 44px 40px; }}
+        .greeting {{ font-size: 22px; font-weight: 700; color: #0f172a; margin-bottom: 14px; }}
+        .text {{ font-size: 15px; color: #475569; line-height: 1.7; margin-bottom: 28px; }}
+        .profile-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 24px; }}
+        .profile-item {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px 20px; }}
+        .profile-label {{ font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.12em; color: #94a3b8; margin-bottom: 4px; }}
+        .profile-value {{ font-size: 15px; font-weight: 600; color: #1e293b; }}
+        .card {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; padding: 22px 24px; margin-bottom: 18px; }}
+        .card-title {{ font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.15em; color: #64748b; margin-bottom: 10px; }}
+        .chip {{ display: inline-block; background: #e0e7ff; color: #4338ca; padding: 5px 12px; border-radius: 100px; font-size: 12px; font-weight: 700; margin: 3px 3px 0 0; }}
+        .btn {{ display: block; background: linear-gradient(135deg, #4f46e5, #1d4ed8); color: white !important; text-decoration: none; text-align: center; padding: 18px 32px; border-radius: 14px; font-weight: 800; font-size: 15px; margin: 28px 0; }}
+        .divider {{ border: none; border-top: 1px solid #e2e8f0; margin: 28px 0; }}
+        .footer {{ background: #0f172a; padding: 26px 40px; text-align: center; color: #475569; font-size: 12px; }}
+        .footer strong {{ color: #6366f1; }}
+    </style>
+    </head>
+    <body>
+    <div class="wrapper">
+        <div class="header">
+            <h1>🚀 Welcome to AgenticFlow, {name}!</h1>
+            <p>Your intelligent onboarding journey begins now · Initiated by AgenticFlow AI</p>
+        </div>
+        <div class="body">
+            <div class="greeting">Hello, {name}! 👋</div>
+            <p class="text">
+                We're thrilled to have you join the <strong>{department}</strong> team as <strong>{role}</strong>!
+                Your onboarding has been fully orchestrated by our autonomous multi-agent AI system.
+                Everything has been provisioned and your tools are ready to go.
+            </p>
+
+            <div class="card">
+                <div class="card-title">👤 Your Employee Profile</div>
+                <div class="profile-grid">
+                    <div class="profile-item">
+                        <div class="profile-label">Full Name</div>
+                        <div class="profile-value">{name}</div>
+                    </div>
+                    <div class="profile-item">
+                        <div class="profile-label">Role</div>
+                        <div class="profile-value">{role}</div>
+                    </div>
+                    <div class="profile-item">
+                        <div class="profile-label">Department</div>
+                        <div class="profile-value">{department}</div>
+                    </div>
+                    <div class="profile-item">
+                        <div class="profile-label">Joining Date</div>
+                        <div class="profile-value">{joining_date}</div>
+                    </div>
+                    <div class="profile-item">
+                        <div class="profile-label">Reporting Manager</div>
+                        <div class="profile-value">{manager}</div>
+                    </div>
+                    <div class="profile-item">
+                        <div class="profile-label">Provisioned Email</div>
+                        <div class="profile-value" style="font-size:13px;">{email}</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">🛠️ Tool Access Provisioned</div>
+                <span class="chip">✅ Slack</span>
+                <span class="chip">✅ JIRA</span>
+                <span class="chip">✅ Corporate Email</span>
+                <span class="chip">✅ GitHub</span>
+                <span class="chip">✅ Confluence</span>
+            </div>
+
+            <div class="card">
+                <div class="card-title">📅 Orientation Schedule</div>
+                <div style="font-size:14px; color:#475569;">
+                    Your orientation with <strong style="color:#1e293b;">{manager}</strong> is scheduled within <strong style="color:#1e293b;">48 hours of {joining_date}</strong>.
+                    A calendar invite will be sent to your corporate inbox shortly.
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">📦 Welcome Pack Includes</div>
+                <div style="font-size:14px; color:#475569; line-height: 1.8;">
+                    ✅ Company Handbook &amp; Culture Guide<br>
+                    ✅ Hardware Setup Instructions<br>
+                    ✅ Direct Access Links Dashboard<br>
+                    ✅ {department} Team Onboarding Checklist
+                </div>
+            </div>
+
+            <a href="https://t.me/AgenticFlowBuddyAI_bot" class="btn">
+                🤖 Connect with Your AI Buddy on Telegram
+            </a>
+
+            <p style="font-size: 13px; text-align: center; color: #94a3b8; margin-top: -16px;">
+                @AgenticFlowBuddyAI_bot — available 24/7 for policy Q&amp;A and onboarding guidance.
+            </p>
+
+            <hr class="divider">
+
+            <p style="font-size: 15px; color: #475569;">
+                Looking forward to your journey with us, {name}!<br><br>
+                Warm regards,<br>
+                <strong style="color: #1e293b;">AgenticFlow People Operations</strong><br>
+                <span style="font-size: 12px; color: #94a3b8;">Powered by Autonomous Multi-Agent Orchestration</span>
+            </p>
+        </div>
+        <div class="footer">
+            © 2026 <strong>AgenticFlow</strong> | Autonomous Enterprise Onboarding System<br>
+            This email was generated and dispatched by the AgenticFlow AI pipeline.
+        </div>
+    </div>
+    </body>
+    </html>
+    """
+    
+    import aiohttp
+    email_sent = False
+    async with aiohttp.ClientSession() as session:
+        try:
+            resp = await session.post(
+                "https://api.resend.com/emails",
+                headers={
+                    "Authorization": "Bearer re_VzHmzh5R_yehgFQzdqdGhw3zp4ZVn6e16",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "from": "onboarding@resend.dev",
+                    "to": ["test111723201002@gmail.com"],
+                    "subject": f"🚀 Welcome to AgenticFlow, {name}! Your {role} Onboarding Pack is Ready",
+                    "html": html_email
+                }
+            )
+            response_text = await resp.text()
+            print(f"[RESEND] Status: {resp.status} | Response: {response_text}")
+            if resp.status in [200, 201]:
+                email_sent = True
+                await new_joinees_collection.update_one(
+                    {"_id": result.inserted_id},
+                    {"$set": {"welcome_email_sent": True}}
+                )
+        except Exception as e:
+            print(f"[RESEND ERROR] {str(e)}")
+    
+    return {
+        "status": "success",
+        "email": email,
+        "name": name,
+        "role": role,
+        "department": department,
+        "welcome_email_sent": email_sent,
+        "welcome_pack": "sent"
+    }
+
+
 
 @app.post("/sla-breach")
 async def process_sla(text: str = Body(..., embed=True)):
