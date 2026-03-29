@@ -1,0 +1,31 @@
+flowchart TD
+    User([User Voice Micro-Segments]) --> LiveMic["Front-end Capture (Web Speech API)"]
+    LiveMic --> TranscriptSync["Backend Segment Sync (POST /audio)"]
+    TranscriptSync --> Finalize["Finalize Transcript"]
+    
+    Finalize --> Planner["PlannerAgent (Extract Tasks)"]
+    Planner --> Assignment["AssignmentAgent (DB Storage)"]
+    Assignment --> Tracker["TrackerAgent (Initial Status)"]
+    Tracker --> Alert["AlertAgent (Deadline Logic)"]
+    Alert --> Fix["FixAgent (Resource Suggestion)"]
+    Fix --> Logger["LoggerAgent (Audit Trail)"]
+    Logger --> Report["ReportAgent (Summary Insight)"]
+    
+    subgraph Storage [Persistent Knowledge Layer]
+        Meetings[(Meetings & Transcripts)]
+        Tasks[(Task JSON)]
+        Logs[(Audit Logs)]
+        ReportData[(Report Summary)]
+    end
+    
+    TranscriptSync -.-> Meetings
+    Planner -.-> Tasks
+    Assignment -.-> Tasks
+    Tracker -.-> Tasks
+    Logger -.-> Logs
+    Report -.-> ReportData
+    
+    Report --> Dashboard([React Pro Dashboard])
+    Tasks --> Dashboard
+    Logs --> Dashboard
+    Meetings --> Dashboard

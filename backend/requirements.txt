@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+motor
+pydantic
+pydantic-settings
+langchain-openai
+langgraph
+langchain
+python-dotenv
+motor
+pymongo
+certifi

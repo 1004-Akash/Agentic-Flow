@@ -1,0 +1,12 @@
+node_modules/
+dist/
+*.log
+.env
+backend/.env
+frontend/.env
+__pycache__/
+.vscode/
+.DS_Store
+.npm/
+.vite/
+.eslintcache
