@@ -46,6 +46,28 @@
 
 ---
 
+
+### Welcome Email — Resend API Dispatch
+> Automated onboarding notification sent the moment a new hire is provisioned
+
+![Mail Sent](Prototype_Photos/mailsent.png)
+
+*The ReportAgent triggers a Resend API email the instant the OnboardingPlanner completes provisioning. Includes the full employee profile, role, department, and joining date — zero manual input required.*
+
+---
+
+### New Joinee Portal — Employee Welcome Pack
+> The autonomous onboarding experience, from the new hire's perspective
+
+![Welcome Pack](Prototype_Photos/welcomepack.png)
+
+*Upon completion of the onboarding pipeline, the new associate sees their fully provisioned profile, confirmed tool access, and is introduced to their **AI Onboarding Buddy** — a RAG-based Telegram bot for 24/7 company Q&A.*
+
+![AI Onboarding Buddy - Telegram Bot](Prototype_Photos/telegram_bot.png)
+
+
+---
+
 ### Predictive Observatory — Main Dashboard
 > Autonomous fleet health and tactical task orchestration
 
@@ -99,24 +121,7 @@
 *1,244 total reports. 0 pending audits. 100% system integrity. Every agent decision — from SLA reroutes to onboarding provisioning — is logged with rationale in the Neural Evidence Hub.*
 
 ---
-
-### Welcome Email — Resend API Dispatch
-> Automated onboarding notification sent the moment a new hire is provisioned
-
-![Mail Sent](Prototype_Photos/mailsent.png)
-
-*The ReportAgent triggers a Resend API email the instant the OnboardingPlanner completes provisioning. Includes the full employee profile, role, department, and joining date — zero manual input required.*
-
----
-
-### New Joinee Portal — Employee Welcome Pack
-> The autonomous onboarding experience, from the new hire's perspective
-
-![Welcome Pack](Prototype_Photos/welcomepack.png)
-
-*Upon completion of the onboarding pipeline, the new associate sees their fully provisioned profile, confirmed tool access, and is introduced to their **AI Onboarding Buddy** — a RAG-based Telegram bot for 24/7 company Q&A.*
-
----
+ 
 
 ## ⚙️ The 7-Agent Neural Architecture
 
