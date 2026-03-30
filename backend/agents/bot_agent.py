@@ -4,7 +4,7 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters, CommandHandler
 from agents.rag_engine import rag_engine
 
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "8727718906:AAGE52DZiU6bzYoV_Fr8f1yHmtRaUFsBr90")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(

@@ -1,60 +1,230 @@
-# AgenticFlow – Autonomous Enterprise Workflow System
+<div align="center">
 
-**Target Track:** Track 2 — Autonomous Enterprise Workflows (Flagship Track)
+<img src="https://img.shields.io/badge/Track-Autonomous%20Enterprise%20Workflows-6366f1?style=for-the-badge&labelColor=0f0f1a" />
+<img src="https://img.shields.io/badge/Stack-LangGraph%20%7C%20FastAPI%20%7C%20React-22d3ee?style=for-the-badge&labelColor=0f0f1a" />
+<img src="https://img.shields.io/badge/Agents-7%20Neural%20Units-10b981?style=for-the-badge&labelColor=0f0f1a" />
 
-## 🚀 Elevator Pitch
-**AgenticFlow** is an enterprise-grade, Multi-Agent AI operating system designed to take absolute ownership of complex, multi-step business processes. Rather than just wrapping an API or acting as a simple chatbot, AgenticFlow uses an intelligent LangGraph orchestration engine to automatically ingest organizational data (like live meeting transcripts or compliance triggers), dynamically plan workloads, catch and self-correct exceptions, and execute without human intervention—all while keeping an immutable audit trail of its autonomous decisions.
+<br /><br />
 
-## 🏆 How We Mastered the Scenario Packs
+```
+ █████╗  ██████╗ ███████╗███╗   ██╗████████╗██╗ ██████╗    ███████╗██╗      ██████╗ ██╗    ██╗
+██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝██║██╔════╝    ██╔════╝██║     ██╔═══██╗██║    ██║
+███████║██║  ███╗█████╗  ██╔██╗ ██║   ██║   ██║██║         █████╗  ██║     ██║   ██║██║ █╗ ██║
+██╔══██║██║   ██║██╔══╝  ██║╚██╗██║   ██║   ██║██║         ██╔══╝  ██║     ██║   ██║██║███╗██║
+██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║   ██║╚██████╗    ██║     ███████╗╚██████╔╝╚███╔███╔╝
+╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝   ╚═╝ ╚═════╝   ╚═╝     ╚══════╝ ╚═════╝  ╚══╝╚══╝
+```
 
-### ✅ 1. Meeting to Action
-**The Problem:** Turning a multi-player meeting into structured, assigned trackable reality.
-**Our Solution:** The core engine ingests live Web Speech API transcriptions into our pipeline. The **PlannerAgent** natively extracts action items and assigns owners. *Crucially*, instead of guessing or hallucinating ambiguous tasks, it flags them with `needs_clarification = True` and pushes them to the **FixAgent**, which determines the least busy engineer via MongoDB aggregation and reassigns it to them. The final state is pushed down to the **ReportAgent**, which emails all participants an executive summary.
+### **Autonomous Enterprise Workflow OS — Powered by a 7-Agent Neural Squadron**
 
-### ✅ 2. SLA Breach Prevention
-**The Problem:** Approvals get stuck when stakeholders are out of office (PTO/Leave), missing external SLAs.
-**Our Solution:** The system processes stagnant ticket data via the **SLAMonitor**. It passes the approver's identity to the **HRIntegrationAgent**, which mocks a Workday API check to verify their "Leave" status. Once confirmed, the **RerouteAgent** automatically identifies the appropriate management delegate and forces the ticket to them. Finally, the **AuditLogger** explicitly injects a compliance override record into the ledger: *"Original approver on leave (>48h SLA) – ticket conditionally rerouted to delegate."*
+*Ingest. Plan. Execute. Self-Correct. Report. No humans required.*
 
-### ✅ 3. Employee Onboarding
-**The Problem:** Stagnant onboarding provisioning that fails mid-way due to brittle 3rd party APIs.
-**Our Solution:** The **OnboardingPlanner** detects a new hire (e.g., John Doe) and sequences a provisioning array `["Slack", "Email", "JIRA"]`. The **AccountCreatorAgent** loops through and provisions them. We explicitly engineered a mock JIRA failure; the agent detects the network failure, branches into an *autonomous retry loop*, and upon a second failure, reroutes to the **ITEscalationAgent** to log a ServiceNow ticket. Finally, the graph naturally converges on the **CultureAgent** to assign a buddy and send the welcome pack.
+</div>
 
 ---
 
-## 📊 Alignment with the Evaluation Rubric
+## 🚀 What Is AgenticFlow?
 
-| Dimension | Weight | How AgenticFlow Transcends the Criteria |
-| :--- | :--- | :--- |
-| **Autonomy Depth** | 30% | Our main pipeline executes **7 autonomous sequential steps** without human input. It handles deep branching logic natively via LangGraph conditional edges (e.g., dynamically looping back to retry failed API hooks or skipping the `FixAgent` if the data is clean). |
-| **Multi-Agent Design** | 20% | Responsibilities are highly atomized. The **TrackerAgent** solely calculates numerical task progress vectors from transcripts, while the **FixAgent** is restricted entirely to error-recovery. They pass a shared immutable `AgentState` object up and down the LangGraph orchestrator. |
-| **Technical Creativity** | 20% | We utilized **LangGraph** for stateful multi-agent execution rather than brittle chained calls. The architecture implies cost-efficiency by allowing smaller OSS models (like Llama-3 8b via OpenRouter) to handle simple `AuditLogger` tasks while delegating the heavy `Planner` extraction to larger GPT/Claude models. |
-| **Enterprise Readiness** | 20% | The **AuditLogger** agent creates a rigorous compliance trail outlining the *rationale* behind every autonomous act. When a ticket is stalled for over 24 hours and the FixAgent cannot resolve it programmatically, the system gracefully degrades by firing an emergency alert to a human admin via the Resend API. |
-| **Impact Quantification** | 10% | Our **ReportAgent** mathematically calculates the system's impact at the end of every run—compiling the `automation_rate` (tasks completed / human tasks saved) and the exact number of autonomous interventions made. |
+**AgenticFlow** is an enterprise-grade, Multi-Agent AI operating system that takes **absolute ownership** of complex, multi-step business processes. Rather than wrapping a simple API or acting as a chatbot, AgenticFlow uses an intelligent **LangGraph orchestration engine** to:
+
+- 📥 Automatically ingest organizational data (live transcripts, compliance triggers)
+- 🧠 Dynamically plan and distribute workloads across specialized agents
+- 🔁 Catch and **self-correct** exceptions autonomously via retry loops
+- ✅ Execute end-to-end without human intervention
+- 📋 Maintain an **immutable audit trail** of every autonomous decision
+
+---
+
+## 🖥️ Platform Screenshots
+
+### Entry Point — Role Selection
+> Secured by Neural Guard & Multisig Verification
+
+![Admin & New Joinee Portal](Prototype_Photos/adminnewjoinee.png)
+
+*Two entry vectors: **Admin** (fleet oversight, escalation handling) and **New Joinee** (automated onboarding experience orchestrated by the multi-agent hive mind).*
+
+---
+
+### Predictive Observatory — Main Dashboard
+> Autonomous fleet health and tactical task orchestration
+
+![Dashboard](Prototype_Photos/dashboard.png)
+
+*Real-time workload allocation across all active engineers. SLA & Critical Oversight panel shows live delayed tickets, rerouted approvals, and compliance overrides.*
+
+---
+
+### Multi-Agent Squadron — Agent Telemetry
+> Real-time health and logic breakdown for all 7 neural units
+
+![7 Agents Panel](Prototype_Photos/7agents.png)
+
+*Each agent card shows its current **Health Status**, **Current Load**, and a live log stream link. The full squadron: PlannerAgent → AssignmentAgent → TrackerAgent → AlertAgent → FixAgent → LoggerAgent → ReportAgent.*
+
+---
+
+### Meetings — Live Intelligence Loop
+> Multi-user provenance with real-time speech-to-text synthesis
+
+![Meeting Room](Prototype_Photos/Meeting.png)
+
+*The meeting room streams live transcripts via the **Web Speech API** directly to the orchestration pipeline. Participants join a secure meeting node; the 7-agent squadron processes all spoken content in real time.*
+
+---
+
+### Alex & Kamal — Live Meeting Sync
+> Two-browser demo: Agent receives transcript and maps tasks autonomously
+
+![Alex Kamal Meeting](Prototype_Photos/alexkamal.png)
+
+*Split-screen demo showing both participant POVs. Kamal reports "100 percent frontend complete" — the TrackerAgent picks up the numerical signal and updates the database state vector immediately.*
+
+---
+
+### Meeting-to-Action Pipeline — Task Progress
+> Extracted tasks, owners, progress bars, SLA countdowns, and telemetry flags
+
+![Progress Tracker](Prototype_Photos/progress.png)
+
+*The AssignmentAgent maps every extracted task to an owner. TrackerAgent monitors fractional progress updates. AlertAgent flags SLA risks. All displayed in the live pipeline view.*
+
+---
+
+### Compliance Reports — Immutable Audit Ledger
+> Every autonomous decision, stored as a verifiable proof of execution
+
+![Compliance Reports](Prototype_Photos/Report.png)
+
+*1,244 total reports. 0 pending audits. 100% system integrity. Every agent decision — from SLA reroutes to onboarding provisioning — is logged with rationale in the Neural Evidence Hub.*
+
+---
+
+### Welcome Email — Resend API Dispatch
+> Automated onboarding notification sent the moment a new hire is provisioned
+
+![Mail Sent](Prototype_Photos/mailsent.png)
+
+*The ReportAgent triggers a Resend API email the instant the OnboardingPlanner completes provisioning. Includes the full employee profile, role, department, and joining date — zero manual input required.*
+
+---
+
+### New Joinee Portal — Employee Welcome Pack
+> The autonomous onboarding experience, from the new hire's perspective
+
+![Welcome Pack](Prototype_Photos/welcomepack.png)
+
+*Upon completion of the onboarding pipeline, the new associate sees their fully provisioned profile, confirmed tool access, and is introduced to their **AI Onboarding Buddy** — a RAG-based Telegram bot for 24/7 company Q&A.*
 
 ---
 
 ## ⚙️ The 7-Agent Neural Architecture
 
-Our main `Meeting to Action` pipeline flows sequentially through these specialized LangChain agents:
+```
+TRANSCRIPT / TRIGGER INPUT
+         │
+         ▼
+  ┌─────────────┐
+  │ PlannerAgent│  ←── Ingests prompt/transcript, extracts tasks, flags ambiguities
+  └──────┬──────┘
+         │
+         ▼
+  ┌──────────────────┐
+  │ AssignmentAgent  │  ←── Maps tasks to engineers via workload + skill vectors (MongoDB)
+  └──────┬───────────┘
+         │
+         ▼
+  ┌──────────────┐
+  │ TrackerAgent │  ←── Detects numerical progress signals, updates DB state vectors
+  └──────┬───────┘
+         │
+         ▼
+  ┌────────────┐
+  │ AlertAgent │  ←── Sweeps for stagnant tasks or SLA breach risk
+  └──────┬─────┘
+         │
+         ▼
+  ┌──────────┐      ┌────────────────────┐
+  │ FixAgent │ ───► │ ITEscalationAgent  │  (on unresolvable failure)
+  └──────┬───┘      └────────────────────┘
+         │
+         ▼
+  ┌──────────────┐
+  │ LoggerAgent  │  ←── Immutable compliance ledger. Every decision. Every rationale.
+  └──────┬───────┘
+         │
+         ▼
+  ┌──────────────┐
+  │ ReportAgent  │  ←── Formats + dispatches executive summaries via Resend API
+  └──────────────┘
+```
 
-1. **PlannerAgent** - Ingests prompt/transcript, extracts data, identifies unassigned tasks.
-2. **AssignmentAgent** - Maps tasks into the unstructured MongoDB project tracker.
-3. **TrackerAgent** - Listens for fractional numerical process updates (e.g., "frontend is 50% done") and updates the DB vectors.
-4. **AlertAgent** - Sweeps the database for delayed tasks or SLA risks.
-5. **FixAgent** - Catches alerts or ambiguous tasks. Reallocates tasks based on workload.
-6. **LoggerAgent** - The enterprise compliance monitor. Compiles an immutable trail of decisions.
-7. **ReportAgent** - The communications handler. Formats the data and dispatches Resend API emails.
+> Additional isolated topologies exist for `/onboarding` and `/sla-breach` triggers.
 
-*(Additional encapsulated topologies exist for `/onboarding` and `/sla-breach` triggers)*
+---
+
+## 🏆 Scenario Coverage
+
+### ✅ Meeting to Action
+The core engine ingests live Web Speech API transcriptions. The **PlannerAgent** extracts action items and assigns owners. Ambiguous tasks are flagged with `needs_clarification = True` and routed to the **FixAgent**, which determines the least-loaded engineer via MongoDB aggregation and reassigns accordingly. The **ReportAgent** emails all participants an executive summary on completion.
+
+### ✅ SLA Breach Prevention
+Stagnant ticket data is processed by the **SLAMonitor**. The approver's identity passes to the **HRIntegrationAgent**, which checks Workday leave status. The **RerouteAgent** identifies the appropriate management delegate and forces the ticket to them. The **AuditLogger** injects a compliance override: *"Original approver on leave (>48h SLA) — ticket conditionally rerouted to delegate."*
+
+### ✅ Employee Onboarding
+The **OnboardingPlanner** detects a new hire and sequences provisioning across `["Slack", "Email", "JIRA"]`. On a JIRA failure, the system enters an **autonomous retry loop**; on second failure, escalates to **ITEscalationAgent** for a ServiceNow ticket. The pipeline then converges on **CultureAgent** to assign a buddy and dispatch the welcome pack.
+
+---
+
+## 📊 Evaluation Rubric Alignment
+
+| Dimension | Weight | Implementation |
+|:---|:---:|:---|
+| **Autonomy Depth** | 30% | 7 sequential autonomous steps. LangGraph conditional edges handle deep branching — retry loops, skip logic, and fallback escalation. |
+| **Multi-Agent Design** | 20% | Highly atomized responsibilities. TrackerAgent only handles numerical vectors. FixAgent only handles error-recovery. Shared immutable `AgentState` object across the graph. |
+| **Technical Creativity** | 20% | LangGraph for stateful execution. Model-agnostic via OpenRouter — lightweight OSS models for audit tasks, larger models for planning and extraction. |
+| **Enterprise Readiness** | 20% | AuditLogger creates a compliance trail with full decision rationale. Emergency admin alerts via Resend API when the system cannot resolve autonomously. |
+| **Impact Quantification** | 10% | ReportAgent calculates `automation_rate` (tasks completed / human tasks saved) and total autonomous interventions per run. |
+
+---
 
 ## 💻 Tech Stack
-- **AI/LLM**: OpenRouter (Model Agnostic), LangChain, LangGraph core orchestrator.
-- **Backend**: Python, FastAPI, MongoDB (Motor Async).
-- **Frontend**: React.js, Vite, Framer Motion, Vanilla CSS (Glassmorphism Dashboard UI).
-- **WebSockets / Audio**: Web Speech API for live transcription syncing cleanly to the server via WS.
-- **Notifications**: Resend API.
 
-## 🛠️ To Run Locally
-1. Boot Backend: `cd backend` -> `python main.py`
-2. Boot Frontend: `cd frontend` -> `npm run dev`
-3. Launch the Matrix Dashboard at `http://localhost:5173`. Click **"Launch New Sync"** to enter the lobby and click the specific Hackathon demo endpoints!
+| Layer | Technology |
+|:---|:---|
+| **AI / Orchestration** | LangChain, LangGraph, OpenRouter (model-agnostic) |
+| **Backend** | Python, FastAPI, MongoDB (Motor Async) |
+| **Frontend** | React.js, Vite, Framer Motion, Glassmorphism CSS |
+| **Real-time Audio** | Web Speech API → WebSocket sync |
+| **Notifications** | Resend API |
+
+---
+
+## 🛠️ Running Locally
+
+```bash
+# 1. Start the backend
+cd backend
+python main.py
+
+# 2. Start the frontend
+cd frontend
+npm run dev
+
+# 3. Open the Matrix Dashboard
+open http://localhost:5173
+```
+
+Click **"Launch New Sync"** to enter the lobby, then hit the scenario endpoints:
+- `Run Onboarding` — triggers the full employee onboarding pipeline
+- `Run SLA Breach` — triggers the SLA rerouting and compliance override flow
+
+---
+
+<div align="center">
+
+**Built for Track 2 — Autonomous Enterprise Workflows**
+
+*AgenticFlow doesn't assist with work. It does the work.*
+
+</div>
